@@ -1,0 +1,105 @@
+version: '3.7'
+services:
+
+  webapp:
+    image: openjdk:11-jre-slim
+    container_name: webapp
+    hostname: webapp
+    expose:
+      - "8080"
+    ports:
+      - "8080:8080"
+    networks:
+      - monitor-net
+    volumes:
+      - ../build/libs:/data
+    working_dir: /data
+    command: java -jar /data/spring-prometheus-0.0.1-SNAPSHOT.jar
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:12.2
+    container_name: postgres
+    hostname: postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: testdatabase
+    expose:
+      - 5432
+    ports:
+      - "5432:5432"
+    networks:
+      - monitor-net
+
+  postgres-exporter:
+    image: wrouesnel/postgres_exporter:v0.8.0
+    container_name: postgres-exporter
+    hostname: postgres-exporter
+    environment:
+      DATA_SOURCE_NAME: "postgresql://postgres:postgres@postgres:5432/testdatabase?sslmode=disable"
+    expose:
+      - 9187
+    ports:
+      - "9187:9187"
+    networks:
+      - monitor-net
+    depends_on:
+      - postgres
+
+  prometheus:
+    image: prom/prometheus:v2.17.2
+    container_name: prometheus
+    hostname: prometheus
+    volumes:
+      # - prometheus_data:/prometheus
+      - ./prometheus/:/etc/prometheus/
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention=200h'
+      - '--web.enable-lifecycle'
+      # - 'storage.local.path=/prometheus'
+      # - 'storage.local.memory-chunks=10000'
+    # restart: unless-stopped
+    expose:
+      - 9090
+    ports:
+      - "9090:9090"
+    networks:
+      - monitor-net
+
+  grafana:
+    image: grafana/grafana:6.7.2
+    container_name: grafana
+    hostname: grafana
+    volumes:
+      # - grafana_data:/var/lib/grafana
+      - ./grafana_data:/var/lib/grafana
+      # - ./grafana/setup.sh:/setup.sh
+    # entrypoint: /setup.sh
+    environment:
+      - GF_SECURITY_ADMIN_USER=${ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    # restart: unless-stopped
+    expose:
+      - 3000
+    ports:
+      - "3000:3000"
+    networks:
+      - monitor-net
+    depends_on:
+      - prometheus
+
+networks:
+  monitor-net:
+    driver: bridge
+    name: "monitor-net"
+
+#volumes:
+#  prometheus_data: {}
+#  grafana_data: {}
